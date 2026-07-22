@@ -1,0 +1,55 @@
+SI units
+
+CSG Base Solids:
+
+-Sphere
+-Cylinder
+-Cube
+-Cuboid
+-Right-angled Triangular Prism
+
+Class Solid_base:
+    Subclass Type {cube/cuboid/prism etc}:
+        get_type() [string] {cube/cuboid/prism etc}
+        get_characteristics() [dict] {ORIGIN | dimension/radius/normal vector/point a/point b/etc}
+    point_is_inside(point) -> return True or False
+
+Bounding box is a Solid instance of type Cube
+
+Materials
+
+Class Material:
+
+    microscopic_xsec = ...
+    macroscopic_xsec = ...
+    mean_free_path = ...
+
+OR GETTER FUNCTIONS THEREOF
+
+    number_density = ...
+    atomic_number = ...
+
+Class Solid:
+
+Array of Solid_base instances
+dict solid_dict:
+(Solid_base): hole
+(Solid_base): solid
+(Solid_base): [etc.]
+verbose = True/False (records counts and stuff)
+simple_attenuator = True/False
+point_is_inside(point) -> True or False (AND/NAND of iterating through solid_dict)
+
+
+==========================
+
+VMF solid resolution:
+Use VMF deserialiser
+Build a structure per-plane of dot products with normal vectors of other planes; elements close to zero help distinguish:
+
+Cube/Cuboid: all but one (the parallel side) = zero | for all sides 
+Right-angled triangular prism: Two non-zero for hypotenuse plane side; one for shadow sides (since they are a parallel pair), one for adjacent/opposite sides from the plane side
+
+Many-face (>6):
+Sphere: Apex point(s) is a plane point in >=6 faces [Check this before cylinder]
+Cylinder: Has a lot of sides but cap sides are a parallel pair with all others perpendicular
