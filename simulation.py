@@ -115,42 +115,56 @@ def resolve_solid(solid):
                 
         # Now do a basis transformation so that the prism fits nicely within XYZ (seperate rotations in 3 diff axes)
         # Condition: One primary side normal vector is a unit vector in x/y/z dir
-        cos_in_x = np.dot(normal_vector_array[primary_side_numbers[0]], [1,0,0])[0]
-        cos_in_y = np.dot(normal_vector_array[primary_side_numbers[0]], [0,1,0])[0] #(it's just 90 - [x angle])
-        cos_in_z = np.dot(normal_vector_array[primary_side_numbers[0]], [0,0,1])[0]
+        
+        # all wrong
+        # |
+        # V
+        """
+        cos_in_x = np.sum(normal_vector_array[primary_side_numbers[0]] * [1,0,0])
+        cos_in_y = np.sum(normal_vector_array[primary_side_numbers[0]] * [0,1,0]) #(it's just 90 - [x angle])
+        cos_in_z = np.sum(normal_vector_array[primary_side_numbers[0]] * [0,0,1])
         theta_x = np.arccos(cos_in_x)
         theta_y = np.arccos(cos_in_y)
         theta_z = np.arccos(cos_in_z)
-        
-        print(theta_x)
-        print(theta_y)
-        print(theta_z)
+        """
+        print(normal_vector_array[3][0])
+        # It seems like it's MISSING a rotation?
+        cos_xz = normal_vector_array[primary_side_numbers[0]][0][0] / np.sqrt(normal_vector_array[primary_side_numbers[0]][0][0]**2 + normal_vector_array[primary_side_numbers[0]][0][2]**2)
+        cos_xy = normal_vector_array[primary_side_numbers[0]][0][0] / np.sqrt(normal_vector_array[primary_side_numbers[0]][0][0]**2 + normal_vector_array[primary_side_numbers[0]][0][1]**2)
+        cos_yz = normal_vector_array[primary_side_numbers[0]][0][1] / np.sqrt(normal_vector_array[primary_side_numbers[0]][0][2]**2 + normal_vector_array[primary_side_numbers[0]][0][1]**2)
+        theta_y = 0 # You only need two rotations to diagonalise, since after those two you'll be "into the page" so to speak on the XZ plane
+        theta_z = np.arccos(cos_xy)
+        theta_x = np.arccos(cos_yz)
+        theta_giggle = 0 # in the current setup 0.9775 diagonalises it perfectly, where does this come from?
+        print(f"{theta_x} | {theta_x * (180 / np.pi)}")
+        print(f"{theta_y} | {theta_y * (180 / np.pi)}")
+        print(f"{theta_z} | {theta_z * (180 / np.pi)}")
         
         diagonalised_normal_vector_array = np.copy(normal_vector_array)
         for i_vector, vector in enumerate(normal_vector_array):
             diagonalised_vector = do_rotation(vector, "x", theta_x)
             diagonalised_vector = do_rotation(diagonalised_vector, "y", theta_y)
             diagonalised_vector = do_rotation(diagonalised_vector, "z", theta_z)
+            diagonalised_vector = do_rotation(diagonalised_vector, "z", theta_giggle)
             diagonalised_normal_vector_array[i_vector] = diagonalised_vector
         diagonalised_plane_points_array = np.zeros(plane_points_array.shape)
         for i_side, side in enumerate(plane_points_array):
             for i_point, point in enumerate(side):
-                diagonalised_plane_point_x = do_rotation(point, "x", theta_x)
-                diagonalised_plane_point_xy = do_rotation(diagonalised_plane_point_x, "y", theta_y)
+                diagonalised_plane_point = do_rotation(point, "x", theta_x)
+                diagonalised_plane_point = do_rotation(diagonalised_plane_point, "y", theta_y)
                 #print(diagonalised_plane_point_xy)
-                diagonalised_plane_point_xyz = do_rotation(diagonalised_plane_point_xy, "z", theta_z)
+                diagonalised_plane_point = do_rotation(diagonalised_plane_point, "z", theta_z)
                 #print("B")
                 #print(diagonalised_plane_point_xyz)
-                diagonalised_plane_points_array[i_side][i_point] = diagonalised_plane_point_xyz
-        
-        prism_height = np.max(diagonalised_plane_points_array[:,:,2].flatten()) - np.min(diagonalised_plane_points_array[:,:,2].flatten())
-        prism_width = np.max(diagonalised_plane_points_array[:,:,1].flatten()) - np.min(diagonalised_plane_points_array[:,:,1].flatten())
-        prism_length = np.max(diagonalised_plane_points_array[:,:,0].flatten()) - np.min(diagonalised_plane_points_array[:,:,0].flatten())
+                diagonalised_plane_points_array[i_side][i_point] = diagonalised_plane_point
         print(primary_side_numbers)
+        print(secondary_side_numbers)
         print(characteristic_side_number)
         prism_angle = np.arccos(np.sum(diagonalised_normal_vector_array[characteristic_side_number] * diagonalised_normal_vector_array[primary_side_numbers[0]]))
         if prism_angle > (np.pi * 0.5):
             prism_angle = np.pi - prism_angle
+        diagonalised_plane_points_array = np.round(diagonalised_plane_points_array, 3)
+        diagonalised_normal_vector_array = np.round(diagonalised_normal_vector_array, 3)
         # height = max Z - min Z
         # width = max Y - min Y
         # length = max X - min X
@@ -159,7 +173,7 @@ def resolve_solid(solid):
         pass
     if side_count > 6:
         pass
-    return (prism_height, prism_width, prism_length, prism_angle,\
+    return (prism_angle,\
             diagonalised_plane_points_array, plane_points_array,\
             diagonalised_normal_vector_array, normal_vector_array, dot_product_mesh)
 class Material:
