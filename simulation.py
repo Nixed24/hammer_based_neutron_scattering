@@ -120,9 +120,9 @@ def get_normal_vector(plane_points):
     normal_vector = normal_vector / magnitude(normal_vector)
     return normal_vector
 def count_nonzeroes(array_2d):
-    count_array = []
-    for row in array_2d:
-        count_array.append(np.count_nonzero(row))
+    count_array = np.zeros(array_2d.shape[0])
+    for i_row, row in enumerate(array_2d):
+        count_array[i_row] = np.count_nonzero(row)
     return count_array
 def resolve_solid(solid):
     solid_type = "none"
@@ -152,7 +152,6 @@ def resolve_solid(solid):
     dot_product_mesh = dot_product_mesh[1:] 
     dot_product_mesh_rounded = np.round(dot_product_mesh, 3)
     nonzero_list = count_nonzeroes(dot_product_mesh_rounded)
-    
     if side_count == 5:
         primary_side_numbers = []
         secondary_side_numbers = []
@@ -190,7 +189,6 @@ def resolve_solid(solid):
             extended_diagonalised_plane_points_array[i_side][3] = fourth_point_coord
             for i in range (3):
                 side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
-        print(extended_diagonalised_plane_points_array)
         side_centres = np.delete(side_centres, characteristic_side_number, 0)
         
         for i in range (3):
@@ -203,9 +201,6 @@ def resolve_solid(solid):
         x_len = np.round(np.max(x_points) - np.min(x_points), 1)
         y_len = np.round(np.max(y_points) - np.min(y_points), 1)
         z_len = np.round(np.max(z_points) - np.min(z_points), 1)
-        
-        
-        #TODO: Now average fourth vertex points for each side to get side centre, average centres to get origin!
         
         cos_angle = np.sum(diagonalised_normal_vector_array[characteristic_side_number]\
                            * diagonalised_normal_vector_array[primary_side_numbers[0]])
@@ -272,14 +267,45 @@ def resolve_solid(solid):
         normdim_array = [[normal_vector_array[x_sides[0]], x_len],
                                   [normal_vector_array[y_sides[0]], y_len],
                                   [normal_vector_array[z_sides[0]], z_len]]
-        
         solid_dict["type"] = solid_type
         solid_dict["origin"] = origin
         solid_dict["normdim"] = normdim_array
         solid_dict["basis_matrix"] = basis_matrix
     if side_count > 6:
+        basis_vectors = []
+        cap_side_numbers = np.argwhere(nonzero_list == 2)
+        if len(cap_side_numbers) == 0:
+            solid_type = "sphere"
+            solid_dict["type"] = solid_type
+        else:
+            solid_type = "cylinder"
+            basis_vectors.append(normal_vector_array[cap_side_numbers[0]][0])
+            other_side_numbers = np.delete(np.arange(len(normal_vector_array)), cap_side_numbers)
+            basis_vectors.append(normal_vector_array[other_side_numbers[0]])
+            basis_vectors.append(np.cross(basis_vectors[0], basis_vectors[1]))
+            basis_matrix = np.transpose(np.vstack((basis_vectors[0], basis_vectors[1], basis_vectors[2])))
+            inverse = np.linalg.inv(basis_matrix)
+            diagonalised_normal_vector_array = np.zeros(normal_vector_array.shape)
+            for i_v, v in enumerate(normal_vector_array):
+                new_v = np.matmul(inverse, v)
+                diagonalised_normal_vector_array[i_v] = new_v
+            cap_normal = np.round(diagonalised_normal_vector_array[cap_side_numbers[0]])[0]
+            cap_axis = np.where(cap_normal != 0)[0][0]
+            other_axes = np.delete(np.arange(3), cap_axis)
+            diagonalised_plane_points_array = np.zeros(plane_points_array.shape)
+            for i_side, side in enumerate(plane_points_array):
+                for i_point, point in enumerate(side):
+                    diagonalised_point = np.matmul(inverse, point)
+                    diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
+            print(diagonalised_plane_points_array[:,:,cap_axis])
+            length = np.round(np.max(diagonalised_plane_points_array[:,:,cap_axis]) - np.min(diagonalised_plane_points_array[:,:,cap_axis]), 1)
+            diameter_estimate_1 = np.round(np.max(diagonalised_plane_points_array[:,:,other_axes[0]]) - np.min(diagonalised_plane_points_array[:,:,other_axes[0]]), 1)
+            diameter_estimate_2 = np.round(np.max(diagonalised_plane_points_array[:,:,other_axes[1]]) - np.min(diagonalised_plane_points_array[:,:,other_axes[1]]), 1)
+            solid_dict["type"] = solid_type
+            solid_dict["length"] = length
+            solid_dict["radius"] = np.average((diameter_estimate_1, diameter_estimate_2)) / 2 # this sucks
+            # radius and origin how?
         #sphere and cylinder
-        pass
     return solid_dict
         #dims
 class Material:
@@ -310,4 +336,4 @@ class Solid_Base:
 class Solid:
     pass
 
-test = resolve_solid(vmf_dict["world&0"]["solid&1"])
+test = resolve_solid(vmf_dict["world&0"]["solid&2"])
