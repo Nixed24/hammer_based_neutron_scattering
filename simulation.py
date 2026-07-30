@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+        #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Sun Jul 19 14:40:08 2026
@@ -259,7 +259,8 @@ def resolve_solid(solid, origin=None):
         for side_number in np.unique(parallel_pairs[:,0]):
             basis_vectors.append(normal_vector_array[side_number])
         already_diagonal_check_array = np.array(np.abs(basis_vectors))
-        if np.count_nonzero(already_diagonal_check_array) == 3:
+        if np.count_nonzero(already_diagonal_check_array) == 3: 
+            # Only three non-zero elements in basis matrix -> just a 90 * N degree rotation on all axes -> no need to rotate
             basis_matrix = np.identity(3)
             inverse = basis_matrix
         else:
@@ -340,14 +341,18 @@ def resolve_solid(solid, origin=None):
         #sphere and cylinder
     return solid_dict
         #dims
-class Material:
+class Particle:
+    def __init__(self):
+        return
+    # get mfp formula function
+    # get angular what's-it-called (Klein-Nishina is an example of this)
+class Material_Profile:
     def __init__(self):
         self.atomic_number = 0
-        self.microscopic_xsec = 0 #barn
         self.number_density = 0
         #macro = number_density * microscopic_xsec
         return
-    def get_mean_free_path(self):
+    def get_mean_free_path(self, particle):
         return
 class Solid_Base:
     def __init__(self):
@@ -425,7 +430,15 @@ class Solid_Base:
                 return True
             return False
         #TODO: implement epsilons?
-class Solid:
+class Solid: #solid_base with physics implemented (Material basically)
+    def __init__(self, solid, material):
+        self.solid_profile = solid
+        self.material_profile = material
+        return
+    def point_is_inside(self, point):
+        return self.solid_profile.point_is_inside(point)
+    def get_mfp(self, particle):
+        return self.material_profile.get_mean_free_path(particle)
     pass
 def solid_from_brush_ent(entity_dict):
     solid_dict = resolve_solid(entity_dict["solid&0"], np.array(entity_dict["origin"].split(" "), dtype=float))
@@ -444,4 +457,3 @@ test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
 test_solid_2 = solid_from_brush_ent(vmf_dict["entity&0"])
 test_solid_2_dict = test_solid_2.get_solid_dict()
 test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
-#144 176 -176
