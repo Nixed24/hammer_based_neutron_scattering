@@ -124,7 +124,7 @@ def count_nonzeroes(array_2d):
     for i_row, row in enumerate(array_2d):
         count_array[i_row] = np.count_nonzero(row)
     return count_array
-def resolve_solid(solid):
+def resolve_solid(solid, origin=None):
     solid_type = "none"
     solid_dict = {}
     plane_points_array = np.zeros((256,3,3))
@@ -140,6 +140,8 @@ def resolve_solid(solid):
             normal_vector_array[counter] = current_normal_vector
             side_count += 1
             counter += 1
+        if key == "id":
+            solid_dict["id"] = value
     plane_points_array = plane_points_array[:counter]
     normal_vector_array = normal_vector_array[:counter]
     normal_vector_array = np.squeeze(normal_vector_array)
@@ -181,21 +183,24 @@ def resolve_solid(solid):
                 extended_diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
         extended_diagonalised_plane_points_array = np.round(extended_diagonalised_plane_points_array, 1)
                 #Diagonalised plane points will probably not be on integer units unfortunately
-        
-        side_centres = np.zeros((5,3))
-        origin = np.zeros(3)
-        for i_side, side in enumerate(extended_diagonalised_plane_points_array):
-            fourth_point_coord = interpolate_fourth_vertex(side[:3])
-            extended_diagonalised_plane_points_array[i_side][3] = fourth_point_coord
+        if origin is None: # This sucks and I need to figure out how to do it properly, for now we'll just have
+        #all brushes be brush ents and then get the origin from there.
+            side_centres = np.zeros((5,3))
+            origin = np.zeros(3)
+            for i_side, side in enumerate(extended_diagonalised_plane_points_array):
+                fourth_point_coord = interpolate_fourth_vertex(side[:3])
+                extended_diagonalised_plane_points_array[i_side][3] = fourth_point_coord
+                for i in range (3):
+                    side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
+            side_centres = np.delete(side_centres, characteristic_side_number, 0)
+            side_centres = np.delete(side_centres, secondary_side_numbers, 0)
+            # this way we know the origin will be at the centre of the characteristic side
+            
             for i in range (3):
-                side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
-        side_centres = np.delete(side_centres, characteristic_side_number, 0)
-        side_centres = np.delete(side_centres, secondary_side_numbers, 0)
-        # this way we know the origin will be at the centre of the characteristic side
-        
-        for i in range (3):
-            origin[i] = np.average(side_centres[:,i])
-        origin = np.matmul(origin, basis_matrix)
+                origin[i] = np.average(side_centres[:,i])
+            print(origin)
+            origin = np.matmul(origin, basis_matrix) #undiagonalising origin
+            print(origin)
         
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array, 3)
         #WARNING : DO NOT USE TO COMPUTE INFORMATION ABOUT CHARACTERISTIC SIDE
@@ -227,7 +232,6 @@ def resolve_solid(solid):
                            * diagonalised_normal_vector_array[primary_side_numbers[0]])
         if cos_angle < 0:
             cos_angle = -1 * cos_angle
-        print(adjacent_parallel_length)
         characteristic_length = adjacent_parallel_length / (cos_angle)
         angle = np.arccos(cos_angle)
         solid_dict["type"] = solid_type
@@ -241,20 +245,26 @@ def resolve_solid(solid):
         #solid_dict["primary_sides"] = primary_side_numbers
         #solid_dict["secondary_sides"] = secondary_side_numbers
         solid_dict["diagonalised_adjacent_parallel_dir"] = adjacent_secondary_side_parallel_unit_vector
-        solid_dict["diagonalised_adjacent_perpendicular_dir"] = adjacent_secondary_side_perp_unit_vector
+        solid_dict["diagonalised_adjacent_perp_dir"] = adjacent_secondary_side_perp_unit_vector
     if side_count == 6:
         i_allocated = []
         solid_type = "cuboid"
         # doesnt account for antiparallel and parallel being basically the same in our case
         dot_product_mesh_rounded = np.abs(dot_product_mesh_rounded)
         parallel_pairs = np.zeros((6,2), dtype=int)
+        print(dot_product_mesh_rounded)
         for i_row, row in enumerate(dot_product_mesh_rounded):
-            parallel_pairs[i_row] = [np.where(row == 1)[0][0], np.where(row == 1)[0][1]]
+            parallel_pairs[i_row] = [np.argwhere(row == 1)[0][0], np.argwhere(row == 1)[1][0]]
         basis_vectors = []
         for side_number in np.unique(parallel_pairs[:,0]):
             basis_vectors.append(normal_vector_array[side_number])
-        basis_matrix = np.transpose(np.vstack((basis_vectors[0], basis_vectors[1], basis_vectors[2])))
-        inverse = np.linalg.inv(basis_matrix)
+        already_diagonal_check_array = np.array(np.abs(basis_vectors))
+        if np.count_nonzero(already_diagonal_check_array) == 3:
+            basis_matrix = np.identity(3)
+            inverse = basis_matrix
+        else:
+            basis_matrix = np.transpose(np.vstack((basis_vectors[0], basis_vectors[1], basis_vectors[2])))
+            inverse = np.linalg.inv(basis_matrix)
         diagonalised_normal_vector_array = np.zeros((6,3))
         for i_v, v in enumerate(normal_vector_array):
             new_v = np.matmul(inverse, v)
@@ -269,36 +279,30 @@ def resolve_solid(solid):
                 diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
                 extended_diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
         extended_diagonalised_plane_points_array = np.round(extended_diagonalised_plane_points_array, 1)
-        side_centres = np.zeros((6,3))
-        origin = np.zeros(3)
-        for i_side, side in enumerate(extended_diagonalised_plane_points_array):
-            fourth_point_coord = interpolate_fourth_vertex(side[:3])
-            extended_diagonalised_plane_points_array[i_side][3] = fourth_point_coord
+        if origin is None:
+            side_centres = np.zeros((6,3))
+            undiagonalised_side_centres = np.zeros((6,3))
+            origin = np.zeros(3)
+            for i_side, side in enumerate(extended_diagonalised_plane_points_array):
+                fourth_point_coord = interpolate_fourth_vertex(side[:3])
+                extended_diagonalised_plane_points_array[i_side][3] = fourth_point_coord
+                for i in range (3):
+                    side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
+                undiagonalised_side_centres[i_side] = np.matmul(side_centres[i_side], basis_matrix)
+            side_centres_rounded = np.round(side_centres, 1)
+            print(side_centres_rounded)
             for i in range (3):
-                side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
+                origin[i] = np.average(undiagonalised_side_centres[:,i])
+            origin = np.matmul(basis_matrix, origin)
+            print(origin)
         
-        for i in range (3):
-            origin[i] = np.average(side_centres[:,i])
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array)
         
-        x_points = diagonalised_plane_points_array[:,:,0]
-        y_points = diagonalised_plane_points_array[:,:,1]
-        z_points = diagonalised_plane_points_array[:,:,2]
         
-        x_len = np.round(np.max(x_points) - np.min(x_points), 1)
-        y_len = np.round(np.max(y_points) - np.min(y_points), 1)
-        z_len = np.round(np.max(z_points) - np.min(z_points), 1)
-        
-        x_sides = np.where(diagonalised_normal_vector_array_rounded[:,0] == 1) # or -1
-        y_sides = np.where(diagonalised_normal_vector_array_rounded[:,1] == 1)
-        z_sides = np.where(diagonalised_normal_vector_array_rounded[:,2] == 1)
-        
-        normdim_array = [[normal_vector_array[x_sides[0]], x_len],
-                                  [normal_vector_array[y_sides[0]], y_len],
-                                  [normal_vector_array[z_sides[0]], z_len]]
         solid_dict["type"] = solid_type
-        solid_dict["origin"] = origin
-        solid_dict["normdim"] = normdim_array
+        solid_dict["origin"] = origin # undiagonalised
+        solid_dict["d_side_centres"] = side_centres # diagonalised
+        solid_dict["d_side_normals"] = diagonalised_normal_vector_array # diagonalised
         solid_dict["basis_matrix"] = basis_matrix
     if side_count > 6: # not yet supported
         basis_vectors = []
@@ -326,7 +330,6 @@ def resolve_solid(solid):
                 for i_point, point in enumerate(side):
                     diagonalised_point = np.matmul(inverse, point)
                     diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
-            print(diagonalised_plane_points_array[:,:,cap_axis])
             length = np.round(np.max(diagonalised_plane_points_array[:,:,cap_axis]) - np.min(diagonalised_plane_points_array[:,:,cap_axis]), 1)
             diameter_estimate_1 = np.round(np.max(diagonalised_plane_points_array[:,:,other_axes[0]]) - np.min(diagonalised_plane_points_array[:,:,other_axes[0]]), 1)
             diameter_estimate_2 = np.round(np.max(diagonalised_plane_points_array[:,:,other_axes[1]]) - np.min(diagonalised_plane_points_array[:,:,other_axes[1]]), 1)
@@ -377,14 +380,13 @@ class Solid_Base:
         return
     def point_is_inside(self, point):
         attribs = self.solid_dict
-        inverse_basis_matrix = np.inverse(attribs["basis_matrix"])
-        angle = attribs["angle"]
+        inverse_basis_matrix = np.linalg.inv(attribs["basis_matrix"])
         if attribs["type"] == "prism":
-            in_counter = 0
-            max_len = np.max(attribs["dimensions"])
+            angle = attribs["angle"]
+            max_len = attribs["characteristic_length"]
             diagonalised_point = np.matmul(point, inverse_basis_matrix)
             diagonalised_origin = np.matmul(attribs["origin"], inverse_basis_matrix)
-            if magnitude(diagonalised_point - diagonalised_origin) > 2.1 * max_len:
+            if magnitude(diagonalised_point - diagonalised_origin) > 1.1 * max_len:
                 return False
             height = np.sin(angle) * attribs["characteristic_length"]
             length = np.cos(angle) * attribs["characteristic_length"]
@@ -395,27 +397,51 @@ class Solid_Base:
             depth_unit_vector = np.array([1,1,1]) - (np.array(length_axis) + np.array(height_axis))
             depth_axis = np.argmax(depth_unit_vector)
             depth = attribs["parallel_length"]
-            depth_bounds = np.array([1,-1]) * depth / 2
             # we know for certain origin will be at midpoint in the parallel axis, it's at the centre of the characteristic side after all
-            if np.abs(diagonalised_origin[depth_axis] - diagonalised_point[depth_axis]) < depth / 2:
-                in_counter += 1
+            if not (np.abs(diagonalised_origin[depth_axis] - diagonalised_point[depth_axis]) < depth / 2):
+                return False
             # now our problem is 2D
             length_diff = diagonalised_origin[length_axis] - diagonalised_point[length_axis]
             height_diff = diagonalised_origin[height_axis] - diagonalised_point[height_axis]
-            if not(np.abs(length_diff) < length / 2 and np.height_diff < height/2):
+            if not(np.abs(length_diff) < length / 2 and np.abs(height_diff) < height/2):
                 return False
             #so it'd be in a cuboid made by shoving 2 of these prisms together
             diff_angle = np.arctan(height_diff / length_diff)
             if diff_angle <= angle:
                 return True
-            #TODO: implement epsilons?
-        elif attribs["type"] == "cube":
-            #TODO: this
-            pass
-        
-            
-                
+            return False
+        elif attribs["type"] == "cuboid":
+            diagonalised_point = np.matmul(point, inverse_basis_matrix)
+            diagonalised_origin = np.matmul(attribs["origin"], inverse_basis_matrix)
+            side_centres = attribs["d_side_centres"]
+            x_centre_points = attribs["d_side_centres"][:,0]
+            y_centre_points = attribs["d_side_centres"][:,1]
+            z_centre_points = attribs["d_side_centres"][:,2]
+            x_len = np.max(x_centre_points) - np.min(x_centre_points)
+            y_len = np.max(y_centre_points) - np.min(y_centre_points)
+            z_len = np.max(z_centre_points) - np.min(z_centre_points)
+            diff = np.abs(diagonalised_point - diagonalised_origin)
+            if (diff[0] < (x_len/2) and diff[1] < (y_len/2) and diff[2] < (z_len/2)):
+                return True
+            return False
+        #TODO: implement epsilons?
 class Solid:
     pass
+def solid_from_brush_ent(entity_dict):
+    solid_dict = resolve_solid(entity_dict["solid&0"], np.array(entity_dict["origin"].split(" "), dtype=float))
+    solid_instance = Solid_Base()
+    solid_instance.merge_parameters(solid_dict)
+    return solid_instance
+def solid_from_world_brush():
+    return
+"""
+test = resolve_solid(vmf_dict["world&0"]["solid&0"])
+test_solid = Solid_Base()
+test_solid.merge_parameters(test)
+test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
+"""
 
-test = resolve_solid(vmf_dict["world&0"]["solid&4"])
+test_solid_2 = solid_from_brush_ent(vmf_dict["entity&0"])
+test_solid_2_dict = test_solid_2.get_solid_dict()
+test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
+#144 176 -176
