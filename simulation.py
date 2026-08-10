@@ -16,10 +16,39 @@ PROTON_MASS = constants.proton_mass # 1.6726e-27 kg
 ELECTRON_MASS = constants.electron_mass # 9.11e-31 kg
 ELECTRON_VOLT = constants.electron_volt # 1.6e-19 J
 
-VALID_PARTICLE_TYPES = ["neutron", "beta_minus", "beta_plus", "gamma"]
+#VALID_PARTICLE_TYPES = ["neutron", "beta_minus", "beta_plus", "gamma"]
+VALID_PARTICLE_TYPES = ["neutron"]
 
+class Material_Profile:
+    def __init__(self, name, atomic_number=None, atomic_mass=None, density=None, molar_mass=None):
+        self.name = name
+        self.density = density # density in grams per centimetre cubed
+        self.Z = atomic_number # u
+        self.A = atomic_mass # u
+        self.molar_mass = molar_mass # molar mass in grams per mole
+        self.atomic_radius = (1.2) * (self.A ** (1/3)) * (10 ** -15) #femtometres
+        self.temperature = None
+        self.number_density = ((self.density) / (self.molar_mass)) * (AVOGADRO_CONSTANT)
+        return
+    def read_in_material_properties(self, filename):
+        return
+    def get_mean_free_path(self, particle):
+        if particle.type == "neutron":
+            if self.temperature is None: #For liquids/gases only
+                pass
+            else:
+                particle_momentum = particle.kinetic_energy / (2 * particle.mass)
+                db_wavelength = PLANCK_CONSTANT / particle_momentum
+                effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
+                microscopic_xsec = 2 * np.pi * (effective_radius**2)
+                macroscopic_xsec = microscopic_xsec * self.number_density * 10**(-24) # cm^-1
+                return (1 / macroscopic_xsec) * 0.01 # metres
+        return
 
-
+material_graphite = Material_Profile("graphite", 6, 12, 1.67, 12.011)
+material_vacuum = Material_Profile("vacuum", 1e-10, 2e-10, 1e-30, 1e-60)
+material_lead = Material_Profile("lead", 82, 207, 11.35, 207.2)
+material_water = Material_Profile("water", 10, 34, 1, 18.0153)
 
 VMF_FILENAME = "test.vmf"
 
@@ -34,6 +63,16 @@ def array_is_uniform(array):
     else:
         return False
     return True
+def random_unit_sphere_points(size):
+    phi_values = np.random.uniform(size = size) * 2 * np.pi
+    theta_values = np.arccos(1-2*np.random.uniform(size = size)) 
+    # np.random.uniform() won't be uniform in a spherical coords conversion, we need to put it through this function to uniformise it.
+    x, y, z = np.sin(theta_values) * np.cos(phi_values), np.sin(theta_values) * np.sin(phi_values), np.cos(theta_values) #Converting to cartesian
+    vectors = np.hstack((x,y,z))
+    return vectors
+def exp_distribution_float(mean, size):
+    radii = -1 * mean * np.log(np.random.uniform(size=size))
+    return radii
 def get_fourth_vertex(plane_points):
     """
     Given a set of three vertices that correspond to a side that is perpendicular to 1 spatial (x/y/z) axis,
@@ -372,31 +411,8 @@ class Particle:
         return
     # get mfp formula function
     # get angular scattering cross-section (Klein-Nishina is an example of this)
-class Material_Profile:
-    def __init__(self, name, atomic_number=None, atomic_mass=None, density=None, molar_mass=None):
-        self.name = name
-        self.density = density # density in grams per centimetre cubed
-        self.Z = atomic_number # u
-        self.A = atomic_mass # u
-        self.molar_mass = molar_mass # molar mass in grams per mole
-        self.atomic_radius = (1.2) * (self.A ** (1/3)) * (10 ** -15) #femtometres
-        self.temperature = None
-        self.number_density = ((self.density) / (self.molar_mass)) * (AVOGADRO_CONSTANT)
-        return
-    def read_in_material_properties(self, filename):
-        return
-    def get_mean_free_path(self, particle):
-        if particle.type == "neutron":
-            if self.temperature is None: #For liquids/gases only
-                pass
-            else:
-                particle_momentum = particle.kinetic_energy / (2 * particle.mass)
-                db_wavelength = PLANCK_CONSTANT / particle_momentum
-                effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
-                microscopic_xsec = 2 * np.pi * (effective_radius**2)
-                macroscopic_xsec = microscopic_xsec * self.number_density * 10**(-24) # cm^-1
-                return (1 / macroscopic_xsec)
-        return
+    
+
 class Solid_Base:
     def __init__(self):
         self.solid_dict = {}
@@ -489,13 +505,22 @@ def solid_base_from_brush_ent(entity_dict):
     return solid_instance
 def solid_from_world_brush():
     return
+def simulation_construct_solids(): # Resolve each solid in the VMF into a Solid instance, using the texture of the first face to get the material
+    return
+def simulation_create_particle_stack(): 
+    # Find info_targets (tentatively) with targetnames that match particle types -- these are our sources.
+    # create the particles that originate from our sources at t_0 using the keyvalue indicating their intensity (name: amount)
+    # Project these particles by their mfp from the source using the source's angles as the direction
+    return
+def simulation_main_loop():
+    return
 """
 test = resolve_solid(vmf_dict["world&0"]["solid&0"])
 test_solid = Solid_Base()
 test_solid.merge_parameters(test)
 test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
 """
-
+SIMULATION_BOUNDS = np.array([[-1000, 1000], [-1000, 1000], [-1000, 1000]])
 test_solid_2 = solid_base_from_brush_ent(vmf_dict["entity&0"])
 test_solid_2_dict = test_solid_2.get_solid_dict()
 test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
