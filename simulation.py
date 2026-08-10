@@ -5,9 +5,21 @@ Created on Sun Jul 19 14:40:08 2026
 
 @author: sainttux
 """
-
+from scipy import constants as constants # We use this library for Avogadro's constant
 import vmf_deserialiser
 import numpy as np
+
+AVOGADRO_CONSTANT = constants.Avogadro
+PLANCK_CONSTANT = constants.Planck # 6.63e-34 Js
+NEUTRON_MASS = constants.neutron_mass # 1.6749e-27 kg
+PROTON_MASS = constants.proton_mass # 1.6726e-27 kg
+ELECTRON_MASS = constants.electron_mass # 9.11e-31 kg
+ELECTRON_VOLT = constants.electron_volt # 1.6e-19 J
+
+VALID_PARTICLE_TYPES = ["neutron", "beta_minus", "beta_plus", "gamma"]
+
+
+
 
 VMF_FILENAME = "test.vmf"
 
@@ -342,22 +354,52 @@ def resolve_solid(solid, origin=None):
     return solid_dict
         #dims
 class Particle:
-    def __init__(self):
+    def __init__(self, name="neutron"):
+        self.pos = np.array([0,0,0])
+        self.rest_mass = 0
+        self.energy = 0
+        self.kinetic_energy = 0
+        self.name = name
+        if name in VALID_PARTICLE_TYPES:
+            exec(f"init_{name}()")
+        else:
+            print(f"Particle not recognised: '{name}', defaulting to neutron")
+            self.init_neutron()
+    def init_neutron(self):
+        self.name = "neutron"
+        self.rest_mass = NEUTRON_MASS
+        self.charge = 0
         return
     # get mfp formula function
-    # get angular what's-it-called (Klein-Nishina is an example of this)
+    # get angular scattering cross-section (Klein-Nishina is an example of this)
 class Material_Profile:
-    def __init__(self):
-        self.atomic_number = 0
-        self.number_density = 0
-        #macro = number_density * microscopic_xsec
+    def __init__(self, name, atomic_number=None, atomic_mass=None, density=None, molar_mass=None):
+        self.name = name
+        self.density = density # density in grams per centimetre cubed
+        self.Z = atomic_number # u
+        self.A = atomic_mass # u
+        self.molar_mass = molar_mass # molar mass in grams per mole
+        self.atomic_radius = (1.2) * (self.A ** (1/3)) * (10 ** -15) #femtometres
+        self.temperature = None
+        self.number_density = ((self.density) / (self.molar_mass)) * (AVOGADRO_CONSTANT)
+        return
+    def read_in_material_properties(self, filename):
         return
     def get_mean_free_path(self, particle):
+        if particle.type == "neutron":
+            if self.temperature is None: #For liquids/gases only
+                pass
+            else:
+                particle_momentum = particle.kinetic_energy / (2 * particle.mass)
+                db_wavelength = PLANCK_CONSTANT / particle_momentum
+                effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
+                microscopic_xsec = 2 * np.pi * (effective_radius**2)
+                macroscopic_xsec = microscopic_xsec * self.number_density * 10**(-24) # cm^-1
+                return (1 / macroscopic_xsec)
         return
 class Solid_Base:
     def __init__(self):
         self.solid_dict = {}
-        self.material = "vacuum"
         self.anti = False
     def attribute_exists(self, attribute):
         if attribute in self.solid_dict.keys():
@@ -432,15 +474,15 @@ class Solid_Base:
         #TODO: implement epsilons?
 class Solid: #solid_base with physics implemented (Material basically)
     def __init__(self, solid, material):
-        self.solid_profile = solid
-        self.material_profile = material
+        self.solid_profile = solid #Solid_Base
+        self.material_profile = material #Material_Profile
         return
     def point_is_inside(self, point):
         return self.solid_profile.point_is_inside(point)
     def get_mfp(self, particle):
         return self.material_profile.get_mean_free_path(particle)
     pass
-def solid_from_brush_ent(entity_dict):
+def solid_base_from_brush_ent(entity_dict):
     solid_dict = resolve_solid(entity_dict["solid&0"], np.array(entity_dict["origin"].split(" "), dtype=float))
     solid_instance = Solid_Base()
     solid_instance.merge_parameters(solid_dict)
@@ -454,6 +496,6 @@ test_solid.merge_parameters(test)
 test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
 """
 
-test_solid_2 = solid_from_brush_ent(vmf_dict["entity&0"])
+test_solid_2 = solid_base_from_brush_ent(vmf_dict["entity&0"])
 test_solid_2_dict = test_solid_2.get_solid_dict()
 test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
