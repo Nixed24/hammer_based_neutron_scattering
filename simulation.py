@@ -33,17 +33,16 @@ class Material_Profile:
     def read_in_material_properties(self, filename):
         return
     def get_mean_free_path(self, particle):
-        if particle.type == "neutron":
-            if self.temperature is None: #For liquids/gases only
-                pass
-            else:
-                particle_momentum = np.sqrt(2 * particle.kinetic_energy * particle.mass)
-                db_wavelength = PLANCK_CONSTANT / particle_momentum
-                effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
-                microscopic_xsec = 2 * np.pi * (effective_radius**2)
-                macroscopic_xsec = microscopic_xsec * self.number_density * 10**(-24) # cm^-1
-                return (1 / macroscopic_xsec) * 0.01 # metres
-        return
+        if particle.name == "neutron":
+        #    if self.temperature is None: #For liquids/gases only
+        #        pass
+            particle_momentum = np.sqrt(2 * particle.kinetic_energy * particle.mass)
+            db_wavelength = PLANCK_CONSTANT / particle_momentum
+            effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
+            microscopic_xsec = 2 * np.pi * (effective_radius**2)
+            macroscopic_xsec = microscopic_xsec * self.number_density * 10**(-24) # cm^-1
+            return (1 / macroscopic_xsec) * 0.01 # metres
+        return "error"
 
 material_graphite = Material_Profile("graphite", 6, 12, 1.67, 12.011)
 material_vacuum = Material_Profile("vacuum", 1e-10, 2e-10, 1e-30, 1e-60)
@@ -267,9 +266,9 @@ def resolve_solid(solid, origin=None):
             
             for i in range (3):
                 origin[i] = np.average(side_centres[:,i])
-            print(origin)
+            #print(origin)
             origin = np.matmul(origin, basis_matrix) #undiagonalising origin
-            print(origin)
+            #print(origin)
         
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array, 3)
         #WARNING : DO NOT USE TO COMPUTE INFORMATION ABOUT CHARACTERISTIC SIDE
@@ -321,7 +320,7 @@ def resolve_solid(solid, origin=None):
         # doesnt account for antiparallel and parallel being basically the same in our case
         dot_product_mesh_rounded = np.abs(dot_product_mesh_rounded)
         parallel_pairs = np.zeros((6,2), dtype=int)
-        print(dot_product_mesh_rounded)
+        #print(dot_product_mesh_rounded)
         for i_row, row in enumerate(dot_product_mesh_rounded):
             parallel_pairs[i_row] = [np.argwhere(row == 1)[0][0], np.argwhere(row == 1)[1][0]]
         basis_vectors = []
@@ -340,7 +339,7 @@ def resolve_solid(solid, origin=None):
             new_v = np.matmul(inverse, v)
             diagonalised_normal_vector_array[i_v] = new_v
             
-            
+        #TODO: dims when origin is known
         extended_diagonalised_plane_points_array = np.zeros((6,4,3))
         diagonalised_plane_points_array = np.zeros((6,3,3))
         for i_side, side in enumerate(plane_points_array):
@@ -348,6 +347,7 @@ def resolve_solid(solid, origin=None):
                 diagonalised_point = np.matmul(inverse, point)
                 diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
                 extended_diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
+                
         extended_diagonalised_plane_points_array = np.round(extended_diagonalised_plane_points_array, 1)
         if origin is None:
             side_centres = np.zeros((6,3))
@@ -360,11 +360,19 @@ def resolve_solid(solid, origin=None):
                     side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
                 undiagonalised_side_centres[i_side] = np.matmul(side_centres[i_side], basis_matrix)
             side_centres_rounded = np.round(side_centres, 1)
-            print(side_centres_rounded)
+            #print(side_centres_rounded)
             for i in range (3):
                 origin[i] = np.average(undiagonalised_side_centres[:,i])
             origin = np.matmul(basis_matrix, origin)
-            print(origin)
+        else:
+            side_centres = None
+        x_points = diagonalised_plane_points_array[:,:,0]
+        y_points = diagonalised_plane_points_array[:,:,1]
+        z_points = diagonalised_plane_points_array[:,:,2]
+        x_length = np.max(x_points) - np.min(x_points)
+        y_length = np.max(y_points) - np.min(y_points)
+        z_length = np.max(z_points) - np.min(z_points)
+            #print(origin)
         
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array)
         
@@ -372,6 +380,7 @@ def resolve_solid(solid, origin=None):
         solid_dict["type"] = solid_type
         solid_dict["origin"] = origin # undiagonalised
         solid_dict["d_side_centres"] = side_centres # diagonalised
+        solid_dict["d_lengths"] = np.array([x_length, y_length, z_length])
         solid_dict["d_side_normals"] = diagonalised_normal_vector_array # diagonalised
         solid_dict["basis_matrix"] = basis_matrix
     if side_count > 6: # not yet supported
@@ -411,6 +420,12 @@ def resolve_solid(solid, origin=None):
     return solid_dict
         #dims
 class Particle:
+    def init_neutron(self):
+        self.name = "neutron"
+        self.rest_mass = NEUTRON_MASS
+        self.mass = self.rest_mass
+        self.charge = 0
+        return
     def __init__(self, name="neutron"):
         self.scatter_event_counter = 0
         self.pos = np.array([0,0,0])
@@ -420,15 +435,10 @@ class Particle:
         self.kinetic_energy = 0
         self.name = name
         if name in VALID_PARTICLE_TYPES:
-            exec(f"init_{name}()")
+            exec(f"self.init_{name}()")
         else:
             print(f"Particle not recognised: '{name}', defaulting to neutron")
             self.init_neutron()
-    def init_neutron(self):
-        self.name = "neutron"
-        self.rest_mass = NEUTRON_MASS
-        self.charge = 0
-        return
     # get mfp formula function
     # get angular scattering cross-section (Klein-Nishina is an example of this)
     
@@ -496,13 +506,10 @@ class Solid_Base:
         elif attribs["type"] == "cuboid":
             diagonalised_point = np.matmul(point, inverse_basis_matrix)
             diagonalised_origin = np.matmul(attribs["origin"], inverse_basis_matrix)
-            side_centres = attribs["d_side_centres"]
-            x_centre_points = attribs["d_side_centres"][:,0]
-            y_centre_points = attribs["d_side_centres"][:,1]
-            z_centre_points = attribs["d_side_centres"][:,2]
-            x_len = np.max(x_centre_points) - np.min(x_centre_points)
-            y_len = np.max(y_centre_points) - np.min(y_centre_points)
-            z_len = np.max(z_centre_points) - np.min(z_centre_points)
+            lengths = attribs["d_lengths"]
+            x_len = lengths[0]
+            y_len = lengths[1]
+            z_len = lengths[2]
             diff = np.abs(diagonalised_point - diagonalised_origin)
             if (diff[0] < (x_len/2) and diff[1] < (y_len/2) and diff[2] < (z_len/2)):
                 return True
@@ -559,7 +566,7 @@ def simulation_create_particle_stack():
                 continue
             particle_name = value["targetname"].split("_")[0]
             try:
-                num_of_particles = value["amount"]
+                num_of_particles = int(value["amount"])
             except KeyError:
                 print("'amount' keyvalue not found for info_target with id '{value['id']}', using amount = 1")
                 num_of_particles = 1
@@ -598,11 +605,18 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             within = np.argwhere(within_array == True)
             majorant_mfp = min(mfp_array)
             if len(within) > 1:
-                print("Warning: Interpenetrating solids: {np.argwhere(within_array == True)}")
-                cur_mfp = solids[within[0]].get_mfp(particle)
+                origins = []
+                for array_index, solid_index in enumerate(np.argwhere(within_array == True)):
+                    origins.append(solids[solid_index[0]].solid_profile.get_solid_dict()["origin"])
+                print(f"Warning: Interpenetrating solids at: {origins} for particle at {particle.pos}")
+                cur_mfp = solids[within[0][0]].get_mfp(particle)
             if len(within) == 0:
-                cur_mfp = material_vacuum.get_mfp(particle) # vacuum medium
-                
+                cur_mfp = material_vacuum.get_mean_free_path(particle) # vacuum medium
+            else:
+                cur_mfp = solids[within[0][0]].get_mfp(particle)
+            
+            #print(majorant_mfp)
+            #print(cur_mfp)
             virtual_scatter_probability = 1 - (majorant_mfp / cur_mfp)
             
             u = np.random.uniform()
@@ -620,8 +634,8 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             
             particle.pos_history = np.vstack((particle.pos_history, particle.pos))
             particle.pos = particle.pos + scatter_vector
-            
-    return
+    print("Finished")
+    return particles
 """
 test = resolve_solid(vmf_dict["world&0"]["solid&0"])
 test_solid = Solid_Base()
@@ -629,6 +643,9 @@ test_solid.merge_parameters(test)
 test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
 """
 SIMULATION_BOUNDS = np.array([[-1000, 1000], [-1000, 1000], [-1000, 1000]])
+s_particles = simulation_create_particle_stack()
+s_solids = simulation_construct_solids()
+simulated_particles = simulation_main_loop(s_particles, s_solids)
 #test_solid_2 = solid_base_from_brush_ent(vmf_dict["entity&0"])
 #test_solid_2_dict = test_solid_2.get_solid_dict()
 #test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
