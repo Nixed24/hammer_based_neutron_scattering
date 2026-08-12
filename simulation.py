@@ -37,7 +37,7 @@ class Material_Profile:
             if self.temperature is None: #For liquids/gases only
                 pass
             else:
-                particle_momentum = particle.kinetic_energy / (2 * particle.mass)
+                particle_momentum = np.sqrt(2 * particle.kinetic_energy * particle.mass)
                 db_wavelength = PLANCK_CONSTANT / particle_momentum
                 effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
                 microscopic_xsec = 2 * np.pi * (effective_radius**2)
@@ -50,7 +50,17 @@ material_vacuum = Material_Profile("vacuum", 1e-10, 2e-10, 1e-30, 1e-60)
 material_lead = Material_Profile("lead", 82, 207, 11.35, 207.2)
 material_water = Material_Profile("water", 10, 34, 1, 18.0153)
 
-VMF_FILENAME = "test.vmf"
+material_fallback = material_graphite
+
+texture_graphite = "NATURE/DIRTFLOOR003A"
+
+texture_lead = "BUILDING_TEMPLATE/BUILDING_TEMPLATE021A"
+
+tex_material_dict = {texture_graphite : material_graphite,
+                     texture_lead : material_lead}
+
+
+VMF_FILENAME = "simulation_test.vmf"
 
 vmf_dict = vmf_deserialiser.deserialise_vmf(VMF_FILENAME)
 def array_is_uniform(array):
@@ -63,10 +73,18 @@ def array_is_uniform(array):
     else:
         return False
     return True
-def random_unit_sphere_points(size):
+def random_unit_sphere_points_cartesian(size=1):
     phi_values = np.random.uniform(size = size) * 2 * np.pi
     theta_values = np.arccos(1-2*np.random.uniform(size = size)) 
     # np.random.uniform() won't be uniform in a spherical coords conversion, we need to put it through this function to uniformise it.
+    x, y, z = np.sin(theta_values) * np.cos(phi_values), np.sin(theta_values) * np.sin(phi_values), np.cos(theta_values) #Converting to cartesian
+    vectors = np.hstack((x,y,z))
+    return vectors
+def random_unit_sphere_points_spherical(size=1):
+    phi_values = np.random.uniform(size = size) * 2 * np.pi
+    theta_values = np.arccos(1-2*np.random.uniform(size = size)) 
+    return (phi_values, theta_values)
+def unit_sphere_spherical_to_cartesian(phi_values, theta_values):
     x, y, z = np.sin(theta_values) * np.cos(phi_values), np.sin(theta_values) * np.sin(phi_values), np.cos(theta_values) #Converting to cartesian
     vectors = np.hstack((x,y,z))
     return vectors
@@ -394,7 +412,9 @@ def resolve_solid(solid, origin=None):
         #dims
 class Particle:
     def __init__(self, name="neutron"):
+        self.scatter_event_counter = 0
         self.pos = np.array([0,0,0])
+        self.pos_history = np.array([0,0,0])
         self.rest_mass = 0
         self.energy = 0
         self.kinetic_energy = 0
@@ -503,16 +523,104 @@ def solid_base_from_brush_ent(entity_dict):
     solid_instance = Solid_Base()
     solid_instance.merge_parameters(solid_dict)
     return solid_instance
+def material_profile_from_brush_ent(entity_dict):
+    try:
+        texture_string = entity_dict["solid&0"]["side&0"]["material"]
+    except KeyError:
+        print(f"Material for side 0 of solid 0 of entity with id '{entity_dict['id']}', defaulting to '{material_fallback.name}'")
+        return material_fallback
+    try:
+        returned_material = tex_material_dict[texture_string]
+    except KeyError:
+        print(f"No material profile found for texture '{texture_string}'. Defaulting to '{material_fallback.name}'.")
+        return material_fallback
+    return returned_material
 def solid_from_world_brush():
     return
-def simulation_construct_solids(): # Resolve each solid in the VMF into a Solid instance, using the texture of the first face to get the material
-    return
+def simulation_construct_solids():
+    solid_array = []
+    for key, value in zip(vmf_dict.keys(), vmf_dict.values()): # Resolve each solid in the VMF into a Solid instance, using the texture of the first face to get the material
+        if len(key) >= 6 and key[:6] == "entity":
+            if value["classname"] != "func_brush":
+                continue
+            solid_base = solid_base_from_brush_ent(value)
+            material = material_profile_from_brush_ent(value)
+            current_solid = Solid(solid_base, material)
+            solid_array.append(current_solid)
+    return solid_array
 def simulation_create_particle_stack(): 
     # Find info_targets (tentatively) with targetnames that match particle types -- these are our sources.
     # create the particles that originate from our sources at t_0 using the keyvalue indicating their intensity (name: amount)
     # Project these particles by their mfp from the source using the source's angles as the direction
+    particle_array = []
+    for key, value in zip(vmf_dict.keys(), vmf_dict.values()): # Resolve each solid in the VMF into a Solid instance, using the texture of the first face to get the material
+        if len(key) >= 6 and key[:6] == "entity":
+            if value["classname"] != "info_target":
+                continue
+            particle_name = value["targetname"].split("_")[0]
+            try:
+                num_of_particles = value["amount"]
+            except KeyError:
+                print("'amount' keyvalue not found for info_target with id '{value['id']}', using amount = 1")
+                num_of_particles = 1
+            try:
+                angles = np.array(value["angles"].split(" "))
+            except KeyError:
+                print("'angles' keyvalue not found for info_target with id '{value['id']}', using angles = 0 0 0")
+                initial_angles = np.array([0,0,0])
+            try:
+                initial_particle_speed = value["initial_speed"]
+            except KeyError:
+                print("'intial_speed' keyvalue not found for info_target with id '{value['id']}', using initial_speed = 5 ms^-1")
+                initial_particle_speed = 50
+            for i in range (num_of_particles):
+                current_particle = Particle(particle_name)
+                current_particle.kinetic_energy = 0.5 * current_particle.mass * (initial_particle_speed ** 2)
+                current_particle.pos = np.array(value["origin"].split(" "), dtype=float)
+                current_particle.virtual_phi = angles[0]
+                current_particle.virtual_theta = angles[1]
+                particle_array.append(current_particle)
+    return particle_array
+#def simulation_woodcock_init():
+#    return
+def simulation_add_walk():
     return
-def simulation_main_loop():
+def simulation_main_loop(particles, solids, num_of_iterations=100):
+    #simulated_particles = particles
+    #simulated_brushes = solids
+    for i in range (num_of_iterations):
+        mfp_array = []
+        within_array = np.zeros(len(solids))
+        for i_p, particle in enumerate(particles):
+            for i_s, solid in enumerate(solids):
+                mfp_array.append(solid.get_mfp(particle))
+                within_array[i_s] = solid.point_is_inside(particle.pos)
+            within = np.argwhere(within_array == True)
+            majorant_mfp = min(mfp_array)
+            if len(within) > 1:
+                print("Warning: Interpenetrating solids: {np.argwhere(within_array == True)}")
+                cur_mfp = solids[within[0]].get_mfp(particle)
+            if len(within) == 0:
+                cur_mfp = material_vacuum.get_mfp(particle) # vacuum medium
+                
+            virtual_scatter_probability = 1 - (majorant_mfp / cur_mfp)
+            
+            u = np.random.uniform()
+            
+            if u > virtual_scatter_probability: 
+                phi_value = np.random.uniform() * 2 * np.pi
+                theta_value = np.arccos(1-2*np.random.uniform())
+                particle.virtual_theta = theta_value
+                particle.virtual_phi = phi_value
+            else:
+                theta_value = particle.virtual_theta
+                phi_value = particle.virtual_phi
+            x, y, z = np.sin(theta_value) * np.cos(phi_value), np.sin(theta_value) * np.sin(phi_value), np.cos(theta_value) #Converting to cartesian
+            scatter_vector = np.hstack((x,y,z))
+            
+            particle.pos_history = np.vstack((particle.pos_history, particle.pos))
+            particle.pos = particle.pos + scatter_vector
+            
     return
 """
 test = resolve_solid(vmf_dict["world&0"]["solid&0"])
@@ -521,6 +629,6 @@ test_solid.merge_parameters(test)
 test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
 """
 SIMULATION_BOUNDS = np.array([[-1000, 1000], [-1000, 1000], [-1000, 1000]])
-test_solid_2 = solid_base_from_brush_ent(vmf_dict["entity&0"])
-test_solid_2_dict = test_solid_2.get_solid_dict()
-test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
+#test_solid_2 = solid_base_from_brush_ent(vmf_dict["entity&0"])
+#test_solid_2_dict = test_solid_2.get_solid_dict()
+#test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
