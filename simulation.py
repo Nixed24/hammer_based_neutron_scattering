@@ -56,18 +56,18 @@ class Material_Profile:
         except NameError:
             return "error"
 
-material_vacuum = Material_Profile("vacuum", 1e-10, 2e-10, 1e-60, 1e-30)
-material_air = None
+material_vacuum = Material_Profile("vacuum", 1e-10, 1e-30, 1e-60, 1e-30)
+material_air = Material_Profile("air", 8.2, 16.4, 1.2, 16.4)
 material_graphite = Material_Profile("graphite", 6, 12, 1.67, 12.011)
 material_lead = Material_Profile("lead", 82, 207, 11.35, 207.2)
-material_water = Material_Profile("water", 10, 34, 1, 18.0153)
+material_water = Material_Profile("water", 10, 18, 1, 18.0153)
 
 material_fallback = material_graphite
 
 texture_air = None
 texture_graphite = "NATURE/DIRTFLOOR003A"
 texture_lead = "BUILDING_TEMPLATE/BUILDING_TEMPLATE021A"
-texture_water = None
+texture_water = "LIQUIDS/WATER_PRETTY1"
 
 tex_material_dict = {texture_graphite : material_graphite,
                      texture_lead : material_lead}
@@ -166,7 +166,6 @@ def do_rotation(vector, axis, _angle):
         angle = 2 * np.pi - _angle
     else:
         angle = _angle
-    #print(f"angle: {angle}")
     if axis == "x":
         rotation_matrix = np.array([[1,0,0], \
                                     [0, np.cos(angle), -1 * np.sin(angle)],\
@@ -280,9 +279,7 @@ def resolve_solid(solid, origin=None):
             
             for i in range (3):
                 origin[i] = np.average(side_centres[:,i])
-            #print(origin)
             origin = np.matmul(origin, basis_matrix) #undiagonalising origin
-            #print(origin)
         
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array, 3)
         #WARNING : DO NOT USE TO COMPUTE INFORMATION ABOUT CHARACTERISTIC SIDE
@@ -334,7 +331,6 @@ def resolve_solid(solid, origin=None):
         # doesnt account for antiparallel and parallel being basically the same in our case
         dot_product_mesh_rounded = np.abs(dot_product_mesh_rounded)
         parallel_pairs = np.zeros((6,2), dtype=int)
-        #print(dot_product_mesh_rounded)
         for i_row, row in enumerate(dot_product_mesh_rounded):
             parallel_pairs[i_row] = [np.argwhere(row == 1)[0][0], np.argwhere(row == 1)[1][0]]
         basis_vectors = []
@@ -374,7 +370,6 @@ def resolve_solid(solid, origin=None):
                     side_centres[i_side][i] = np.average(extended_diagonalised_plane_points_array[i_side][:,i])
                 undiagonalised_side_centres[i_side] = np.matmul(side_centres[i_side], basis_matrix)
             side_centres_rounded = np.round(side_centres, 1)
-            #print(side_centres_rounded)
             for i in range (3):
                 origin[i] = np.average(undiagonalised_side_centres[:,i])
             origin = np.matmul(basis_matrix, origin)
@@ -386,7 +381,6 @@ def resolve_solid(solid, origin=None):
         x_length = np.max(x_points) - np.min(x_points)
         y_length = np.max(y_points) - np.min(y_points)
         z_length = np.max(z_points) - np.min(z_points)
-            #print(origin)
         
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array)
         
@@ -435,6 +429,7 @@ def resolve_solid(solid, origin=None):
         #dims
 class Particle:
     def init_neutron(self):
+        self.is_awake = True
         self.name = "neutron"
         self.rest_mass = NEUTRON_MASS
         self.mass = self.rest_mass
@@ -460,7 +455,8 @@ class Particle:
 class Solid_Base:
     def __init__(self):
         self.solid_dict = {}
-        self.anti = False
+        self.anti = False # (UNIMPLEMENTED) this solid takes precedence when interpenetrating other solids
+        self.is_detector = False
     def attribute_exists(self, attribute):
         if attribute in self.solid_dict.keys():
             return True
@@ -530,9 +526,21 @@ class Solid_Base:
             return False
         #TODO: implement epsilons?
 class Solid: #solid_base with physics implemented (Material basically)
+    def default_detection_routine(self, particle):
+        if particle.name == "neutron":
+            self.detection_hits["neutron"] += 1
+            print(f"Detected a neutron! (hits = {self.detection_hits['neutron']})")
+            return False # return False -> stop the particle from being simulated
+        else:
+            return True
     def __init__(self, solid, material):
+        self.detection_routine = self.default_detection_routine
+        self.detection_hits = {}
+        for particle_type in VALID_PARTICLE_TYPES:
+            self.detection_hits[particle_type] = 0
         self.solid_profile = solid #Solid_Base
         self.material_profile = material #Material_Profile
+        self.simulation_settings_dict = {"is_detector" : False}
         return
     def point_is_inside(self, point):
         return self.solid_profile.point_is_inside(point)
@@ -541,6 +549,7 @@ class Solid: #solid_base with physics implemented (Material basically)
     pass
 def solid_base_from_brush_ent(entity_dict):
     solid_dict = resolve_solid(entity_dict["solid&0"], np.array(entity_dict["origin"].split(" "), dtype=float))
+    solid_dict["id"] = entity_dict["solid&0"]["id"]
     solid_instance = Solid_Base()
     solid_instance.merge_parameters(solid_dict)
     return solid_instance
@@ -556,6 +565,13 @@ def material_profile_from_brush_ent(entity_dict):
         print(f"No material profile found for texture '{texture_string}'. Defaulting to '{material_fallback.name}'.")
         return material_fallback
     return returned_material
+def solid_from_brush_ent(entity_dict):
+    solid_base = solid_base_from_brush_ent(entity_dict)
+    material = material_profile_from_brush_ent(entity_dict)
+    returned_solid = Solid(solid_base, material)
+    if "is_detector" in entity_dict.keys() and entity_dict["is_detector"] == "yes":
+        returned_solid.simulation_settings_dict["is_detector"] = True
+    return returned_solid
 def solid_from_world_brush():
     return
 def simulation_construct_solids():
@@ -564,9 +580,7 @@ def simulation_construct_solids():
         if len(key) >= 6 and key[:6] == "entity":
             if value["classname"] != "func_brush":
                 continue
-            solid_base = solid_base_from_brush_ent(value)
-            material = material_profile_from_brush_ent(value)
-            current_solid = Solid(solid_base, material)
+            current_solid = solid_from_brush_ent(value)
             solid_array.append(current_solid)
     return solid_array
 def simulation_create_particle_stack(): 
@@ -602,8 +616,6 @@ def simulation_create_particle_stack():
                 current_particle.virtual_theta = angles[1]
                 particle_array.append(current_particle)
     return particle_array
-#def simulation_woodcock_init():
-#    return
 def simulation_add_walk():
     return
 def simulation_main_loop(particles, solids, num_of_iterations=100):
@@ -613,6 +625,8 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
         mfp_array = []
         within_array = np.zeros(len(solids))
         for i_p, particle in enumerate(particles):
+            if particle.is_awake == False:
+                continue
             for i_s, solid in enumerate(solids):
                 mfp_array.append(solid.get_mfp(particle))
                 within_array[i_s] = solid.point_is_inside(particle.pos)
@@ -622,15 +636,22 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
                 origins = []
                 for array_index, solid_index in enumerate(np.argwhere(within_array == True)):
                     origins.append(solids[solid_index[0]].solid_profile.get_solid_dict()["origin"])
-                print(f"Warning: Interpenetrating solids at: {origins} for particle at {particle.pos}")
+                print(f"Warning: Interpenetrating solids at: {origins} for particle at {particle.pos}; using first found.")
                 cur_mfp = solids[within[0][0]].get_mfp(particle)
-            if len(within) == 0:
-                cur_mfp = material_vacuum.get_mean_free_path(particle) # vacuum medium
+                cur_solid = solids[within[0][0]]
+                particle_in_solid = True
+            elif len(within) == 0:
+                cur_mfp = material_air.get_mean_free_path(particle) # vacuum medium
+                particle_in_solid = False
             else:
                 cur_mfp = solids[within[0][0]].get_mfp(particle)
+                cur_solid = solids[within[0][0]]
+                particle_in_solid = True
             
-            #print(majorant_mfp)
-            #print(cur_mfp)
+            if particle_in_solid:
+                if cur_solid.simulation_settings_dict["is_detector"] == True:
+                    particle.is_awake = cur_solid.detection_routine(particle)
+
             virtual_scatter_probability = 1 - (majorant_mfp / cur_mfp)
             
             u = np.random.uniform()
@@ -643,7 +664,6 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             else:
                 theta_value = particle.virtual_theta
                 phi_value = particle.virtual_phi
-            print(theta_value)
             x, y, z = np.sin(theta_value) * np.cos(phi_value), np.sin(theta_value) * np.sin(phi_value), np.cos(theta_value) #Converting to cartesian
             scatter_vector = np.hstack((x,y,z))
             
@@ -651,16 +671,7 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             particle.pos = particle.pos + scatter_vector
     print("Finished")
     return particles
-"""
-test = resolve_solid(vmf_dict["world&0"]["solid&0"])
-test_solid = Solid_Base()
-test_solid.merge_parameters(test)
-test_bool = test_solid.point_is_inside(np.array([-96,160,-32]))
-"""
-SIMULATION_BOUNDS = np.array([[-1000, 1000], [-1000, 1000], [-1000, 1000]])
+#SIMULATION_BOUNDS = np.array([[-1000, 1000], [-1000, 1000], [-1000, 1000]])
 s_particles = simulation_create_particle_stack()
 s_solids = simulation_construct_solids()
 simulated_particles = simulation_main_loop(s_particles, s_solids)
-#test_solid_2 = solid_base_from_brush_ent(vmf_dict["entity&0"])
-#test_solid_2_dict = test_solid_2.get_solid_dict()
-#test_bool_2 = test_solid_2.point_is_inside(np.array([144,176,-176]))
