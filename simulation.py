@@ -15,7 +15,7 @@ NEUTRON_MASS = constants.neutron_mass # 1.6749e-27 kg
 PROTON_MASS = constants.proton_mass # 1.6726e-27 kg
 ELECTRON_MASS = constants.electron_mass # 9.11e-31 kg
 ELECTRON_VOLT = constants.electron_volt # 1.6e-19 J
-
+C_0 = constants.c
 #VALID_PARTICLE_TYPES = ["neutron", "beta_minus", "beta_plus", "gamma"]
 VALID_PARTICLE_TYPES = ["neutron"]
 
@@ -29,31 +29,45 @@ class Material_Profile:
         self.atomic_radius = (1.2) * (self.A ** (1/3)) * (10 ** -15) #femtometres
         self.temperature = None
         self.number_density = ((self.density) / (self.molar_mass)) * (AVOGADRO_CONSTANT)
+        self.mfp_buffer = None
         return
     def read_in_material_properties(self, filename):
         return
+    def get_mean_free_path_neutron(self, particle):
+        particle_momentum = np.sqrt(2 * particle.kinetic_energy * particle.mass)
+        db_wavelength = PLANCK_CONSTANT / particle_momentum
+        effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
+        microscopic_xsec = 2 * np.pi * (effective_radius**2) * (10 ** 4)
+        macroscopic_xsec = microscopic_xsec * self.number_density # cm^-1
+        
+        self.mfp_buffer = (1 / macroscopic_xsec) * 0.01 # Always include this line!
+        #return (1 / macroscopic_xsec) * 0.01
+        return
+    def get_mean_free_path_your_particle(self, particle):
+        your_mfp = None
+        
+        self.mfp_buffer = your_mfp
+        return
     def get_mean_free_path(self, particle):
-        if particle.name == "neutron":
-        #    if self.temperature is None: #For liquids/gases only
-        #        pass
-            particle_momentum = np.sqrt(2 * particle.kinetic_energy * particle.mass)
-            db_wavelength = PLANCK_CONSTANT / particle_momentum
-            effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
-            microscopic_xsec = 2 * np.pi * (effective_radius**2)
-            macroscopic_xsec = microscopic_xsec * self.number_density * 10**(-24) # cm^-1
-            return (1 / macroscopic_xsec) * 0.01 # metres
-        return "error"
+        try:
+            exec(f"self.get_mean_free_path_{particle.name}(particle)")
+            print(f"mfp ({self.name}): {self.mfp_buffer}")
+            return self.mfp_buffer
+        except NameError:
+            return "error"
 
+material_vacuum = Material_Profile("vacuum", 1e-10, 2e-10, 1e-60, 1e-30)
+material_air = None
 material_graphite = Material_Profile("graphite", 6, 12, 1.67, 12.011)
-material_vacuum = Material_Profile("vacuum", 1e-10, 2e-10, 1e-30, 1e-60)
 material_lead = Material_Profile("lead", 82, 207, 11.35, 207.2)
 material_water = Material_Profile("water", 10, 34, 1, 18.0153)
 
 material_fallback = material_graphite
 
+texture_air = None
 texture_graphite = "NATURE/DIRTFLOOR003A"
-
 texture_lead = "BUILDING_TEMPLATE/BUILDING_TEMPLATE021A"
+texture_water = None
 
 tex_material_dict = {texture_graphite : material_graphite,
                      texture_lead : material_lead}
@@ -571,7 +585,7 @@ def simulation_create_particle_stack():
                 print("'amount' keyvalue not found for info_target with id '{value['id']}', using amount = 1")
                 num_of_particles = 1
             try:
-                angles = np.array(value["angles"].split(" "))
+                angles = np.array(value["angles"].split(" "), dtype=float) * (np.pi / 180)
             except KeyError:
                 print("'angles' keyvalue not found for info_target with id '{value['id']}', using angles = 0 0 0")
                 initial_angles = np.array([0,0,0])
@@ -579,12 +593,12 @@ def simulation_create_particle_stack():
                 initial_particle_speed = value["initial_speed"]
             except KeyError:
                 print("'intial_speed' keyvalue not found for info_target with id '{value['id']}', using initial_speed = 5 ms^-1")
-                initial_particle_speed = 50
+                initial_particle_speed = 0.05 * C_0
             for i in range (num_of_particles):
                 current_particle = Particle(particle_name)
                 current_particle.kinetic_energy = 0.5 * current_particle.mass * (initial_particle_speed ** 2)
                 current_particle.pos = np.array(value["origin"].split(" "), dtype=float)
-                current_particle.virtual_phi = angles[0]
+                current_particle.virtual_phi = angles[0] 
                 current_particle.virtual_theta = angles[1]
                 particle_array.append(current_particle)
     return particle_array
@@ -629,6 +643,7 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             else:
                 theta_value = particle.virtual_theta
                 phi_value = particle.virtual_phi
+            print(theta_value)
             x, y, z = np.sin(theta_value) * np.cos(phi_value), np.sin(theta_value) * np.sin(phi_value), np.cos(theta_value) #Converting to cartesian
             scatter_vector = np.hstack((x,y,z))
             
