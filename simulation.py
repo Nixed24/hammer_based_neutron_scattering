@@ -51,7 +51,7 @@ class Material_Profile:
     def get_mean_free_path(self, particle):
         try:
             exec(f"self.get_mean_free_path_{particle.name}(particle)")
-            print(f"mfp ({self.name}): {self.mfp_buffer}")
+            #print(f"mfp ({self.name}): {self.mfp_buffer}")
             return self.mfp_buffer
         except NameError:
             return "error"
@@ -450,8 +450,6 @@ class Particle:
             self.init_neutron()
     # get mfp formula function
     # get angular scattering cross-section (Klein-Nishina is an example of this)
-    
-
 class Solid_Base:
     def __init__(self):
         self.solid_dict = {}
@@ -529,7 +527,7 @@ class Solid: #solid_base with physics implemented (Material basically)
     def default_detection_routine(self, particle):
         if particle.name == "neutron":
             self.detection_hits["neutron"] += 1
-            print(f"Detected a neutron! (hits = {self.detection_hits['neutron']})")
+            print(f"Detected a neutron at detector with id {self.solid_profile.solid_dict['id']}! (hits = {self.detection_hits['neutron']})")
             return False # return False -> stop the particle from being simulated
         else:
             return True
@@ -596,17 +594,17 @@ def simulation_create_particle_stack():
             try:
                 num_of_particles = int(value["amount"])
             except KeyError:
-                print("'amount' keyvalue not found for info_target with id '{value['id']}', using amount = 1")
+                print(f"'amount' keyvalue not found for info_target with id '{value['id']}', using amount = 1")
                 num_of_particles = 1
             try:
                 angles = np.array(value["angles"].split(" "), dtype=float) * (np.pi / 180)
             except KeyError:
-                print("'angles' keyvalue not found for info_target with id '{value['id']}', using angles = 0 0 0")
+                print(f"'angles' keyvalue not found for info_target with id '{value['id']}', using angles = 0 0 0")
                 initial_angles = np.array([0,0,0])
             try:
                 initial_particle_speed = value["initial_speed"]
             except KeyError:
-                print("'intial_speed' keyvalue not found for info_target with id '{value['id']}', using initial_speed = 5 ms^-1")
+                print(f"'intial_speed' keyvalue not found for info_target with id '{value['id']}', using initial_speed = 0.05c")
                 initial_particle_speed = 0.05 * C_0
             for i in range (num_of_particles):
                 current_particle = Particle(particle_name)
