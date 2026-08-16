@@ -62,7 +62,7 @@ material_graphite = Material_Profile("graphite", 6, 12, 1.67, 12.011)
 material_lead = Material_Profile("lead", 82, 207, 11.35, 207.2)
 material_water = Material_Profile("water", 10, 18, 1, 18.0153)
 
-material_fallback = material_graphite
+material_fallback = material_air
 
 texture_air = None
 texture_graphite = "NATURE/DIRTFLOOR003A"
@@ -236,9 +236,9 @@ def resolve_solid(solid, origin=None):
     dot_product_mesh_rounded = np.round(dot_product_mesh, 3)
     nonzero_list = count_nonzeroes(dot_product_mesh_rounded)
     if side_count == 5:
+        solid_type = "prism"
         primary_side_numbers = []
         secondary_side_numbers = []
-        solid_type = "prism"
         characteristic_side_number = nonzero_list.tolist().index(3)
         
         for i in range (len(dot_product_mesh_rounded[0])):
@@ -256,6 +256,7 @@ def resolve_solid(solid, origin=None):
             new_v = np.matmul(inverse, v)
             diagonalised_normal_vector_array[i_v] = new_v
         diagonalised_plane_points_array = np.zeros((5,3,3))
+        
         extended_diagonalised_plane_points_array = np.zeros((5,4,3))
         for i_side, side in enumerate(plane_points_array):
             for i_point, point in enumerate(side):
@@ -263,7 +264,7 @@ def resolve_solid(solid, origin=None):
                 diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
                 extended_diagonalised_plane_points_array[i_side][i_point] = diagonalised_point
         extended_diagonalised_plane_points_array = np.round(extended_diagonalised_plane_points_array, 1)
-                #Diagonalised plane points will probably not be on integer units unfortunately
+        
         if origin is None: # This sucks and I need to figure out how to do it properly, for now we'll just have
         #all brushes be brush ents and then get the origin from there.
             side_centres = np.zeros((5,3))
@@ -279,10 +280,10 @@ def resolve_solid(solid, origin=None):
             
             for i in range (3):
                 origin[i] = np.average(side_centres[:,i])
-            origin = np.matmul(origin, basis_matrix) #undiagonalising origin
+            origin = np.matmul(origin, basis_matrix) 
         
         diagonalised_normal_vector_array_rounded = np.round(diagonalised_normal_vector_array, 3)
-        #WARNING : DO NOT USE TO COMPUTE INFORMATION ABOUT CHARACTERISTIC SIDE
+                                         #######
         
         diagonalised_characteristic_side_parallel_axis = np.argmin(np.abs(diagonalised_normal_vector_array_rounded[characteristic_side_number]))
         parallel_points = diagonalised_plane_points_array[:,:,diagonalised_characteristic_side_parallel_axis]
@@ -619,6 +620,7 @@ def simulation_add_walk():
 def simulation_main_loop(particles, solids, num_of_iterations=100):
     #simulated_particles = particles
     #simulated_brushes = solids
+    print(f"Simulation began with {len(particles)} particles and {len(solids)} solids.")
     for i in range (num_of_iterations):
         mfp_array = []
         within_array = np.zeros(len(solids))
@@ -667,7 +669,7 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             
             particle.pos_history = np.vstack((particle.pos_history, particle.pos))
             particle.pos = particle.pos + scatter_vector
-    print("Finished")
+    print("Simulation max iterations reached")
     return particles
 #SIMULATION_BOUNDS = np.array([[-1000, 1000], [-1000, 1000], [-1000, 1000]])
 s_particles = simulation_create_particle_stack()
