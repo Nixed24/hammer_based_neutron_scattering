@@ -63,7 +63,8 @@ material_lead = Material_Profile("lead", 82, 207, 11.35, 207.2)
 material_water = Material_Profile("water", 10, 18, 1, 18.0153)
 
 material_fallback = material_air
-
+material_anti = material_air
+texture_anti = "TOOLS/TOOLSNODRAW"
 texture_air = None
 texture_graphite = "NATURE/DIRTFLOOR003A"
 texture_lead = "BUILDING_TEMPLATE/BUILDING_TEMPLATE021A"
@@ -73,7 +74,7 @@ tex_material_dict = {texture_graphite : material_graphite,
                      texture_lead : material_lead}
 
 
-VMF_FILENAME = "simulation_test.vmf"
+VMF_FILENAME = "group_test.vmf"
 
 vmf_dict = vmf_deserialiser.deserialise_vmf(VMF_FILENAME)
 def array_is_uniform(array):
@@ -314,6 +315,7 @@ def resolve_solid(solid, origin=None):
             cos_angle = -1 * cos_angle
         characteristic_length = adjacent_parallel_length / (cos_angle)
         angle = np.arccos(cos_angle)
+        
         solid_dict["type"] = solid_type
         solid_dict["angle"] = angle
         solid_dict["origin"] = origin # undiagonalised origin
@@ -539,12 +541,23 @@ class Solid: #solid_base with physics implemented (Material basically)
             self.detection_hits[particle_type] = 0
         self.solid_profile = solid #Solid_Base
         self.material_profile = material #Material_Profile
-        self.simulation_settings_dict = {"is_detector" : False}
+        self.simulation_settings_dict = {"is_detector" : False,
+                                         "is_anti_solid" : False}
         return
     def point_is_inside(self, point):
         return self.solid_profile.point_is_inside(point)
     def get_mfp(self, particle):
         return self.material_profile.get_mean_free_path(particle)
+    pass
+class Solid_Group:
+    # solid_from_brush_ent: check if entity has more than 1 "solid&x" structure, if so loop through and flag anti's
+    # amalgamate into instance of this class
+    # use same name functions as Solid
+    def __init__(self):
+        solid_array = []
+        anti_solid_array = [] # use another brush ent to specify if it is anti-solid
+        combined_array = []
+        return
     pass
 def solid_base_from_brush_ent(entity_dict):
     solid_dict = resolve_solid(entity_dict["solid&0"], np.array(entity_dict["origin"].split(" "), dtype=float))
@@ -570,6 +583,8 @@ def solid_from_brush_ent(entity_dict):
     returned_solid = Solid(solid_base, material)
     if "is_detector" in entity_dict.keys() and entity_dict["is_detector"] == "yes":
         returned_solid.simulation_settings_dict["is_detector"] = True
+    if "is_anti_solid" in entity_dict.keys() and entity_dict["is_anti_solid"] == "yes":
+        returned_solid.simulation_settings_dict["is_anti_solid"] = True
     return returned_solid
 def solid_from_world_brush():
     return
@@ -615,7 +630,7 @@ def simulation_create_particle_stack():
                 current_particle.virtual_theta = angles[1]
                 particle_array.append(current_particle)
     return particle_array
-def simulation_add_walk():
+def simulation_add_walk(particle):
     return
 def simulation_main_loop(particles, solids, num_of_iterations=100):
     #simulated_particles = particles
@@ -636,10 +651,15 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
                 origins = []
                 for array_index, solid_index in enumerate(np.argwhere(within_array == True)):
                     origins.append(solids[solid_index[0]].solid_profile.get_solid_dict()["origin"])
-                print(f"Warning: Interpenetrating solids at: {origins} for particle at {particle.pos}; using first found.")
                 cur_mfp = solids[within[0][0]].get_mfp(particle)
                 cur_solid = solids[within[0][0]]
                 particle_in_solid = True
+                for index in np.argwhere(within_array == True):
+                    if solids[index[0]].simulation_settings_dict["is_anti_solid"] == True:
+                        particle_in_solid = False # dont need to break the if as it'll overwrite previous
+                        #print("Particle hit anti")
+                if particle_in_solid == True:
+                    print(f"Warning: Interpenetrating non-anti solids at: {origins} for particle at {particle.pos}; using first found.")
             elif len(within) == 0:
                 cur_mfp = material_air.get_mean_free_path(particle) # vacuum medium
                 particle_in_solid = False
@@ -651,7 +671,8 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
             if particle_in_solid:
                 if cur_solid.simulation_settings_dict["is_detector"] == True:
                     particle.is_awake = cur_solid.detection_routine(particle)
-
+                    
+            #########--- Neutron specific, could be replaced by a function call that returns a vector to translate particle by. ---#########
             virtual_scatter_probability = 1 - (majorant_mfp / cur_mfp)
             
             u = np.random.uniform()
@@ -666,6 +687,7 @@ def simulation_main_loop(particles, solids, num_of_iterations=100):
                 phi_value = particle.virtual_phi
             x, y, z = np.sin(theta_value) * np.cos(phi_value), np.sin(theta_value) * np.sin(phi_value), np.cos(theta_value) #Converting to cartesian
             scatter_vector = np.hstack((x,y,z))
+            #################################################################################################################################
             
             particle.pos_history = np.vstack((particle.pos_history, particle.pos))
             particle.pos = particle.pos + scatter_vector
