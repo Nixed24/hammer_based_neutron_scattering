@@ -3,7 +3,7 @@
 """
 Created on Sun Jul 19 14:40:08 2026
 
-@author: sainttux
+@author: github.com/Nixed24
 """
 from scipy import constants as constants # We use this library for Avogadro's constant
 import vmf_deserialiser
