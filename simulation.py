@@ -40,7 +40,8 @@ class Material_Profile:
         microscopic_xsec = 2 * np.pi * (effective_radius**2) * (10 ** 4)
         macroscopic_xsec = microscopic_xsec * self.number_density # cm^-1
         
-        self.mfp_buffer = (1 / macroscopic_xsec) * 0.01 # Always include this line!
+        self.mfp_buffer = (1 / macroscopic_xsec) * 1.905 # Always include this line!
+        # Factor is for conversion to hammer unit
         #return (1 / macroscopic_xsec) * 0.01
         return
     def get_mean_free_path_your_particle(self, particle):
@@ -71,7 +72,9 @@ texture_lead = "BUILDING_TEMPLATE/BUILDING_TEMPLATE021A"
 texture_water = "LIQUIDS/WATER_PRETTY1"
 
 tex_material_dict = {texture_graphite : material_graphite,
-                     texture_lead : material_lead}
+                     texture_lead : material_lead,
+                     texture_water : material_water,
+                     texture_anti : material_anti}
 
 
 VMF_FILENAME = "group_test.vmf"
@@ -578,12 +581,13 @@ def material_profile_from_brush_ent(entity_dict):
         return material_fallback
     return returned_material
 def solid_from_brush_ent(entity_dict):
+    texture_string = entity_dict["solid&0"]["side&0"]["material"]    
     solid_base = solid_base_from_brush_ent(entity_dict)
     material = material_profile_from_brush_ent(entity_dict)
     returned_solid = Solid(solid_base, material)
     if "is_detector" in entity_dict.keys() and entity_dict["is_detector"] == "yes":
         returned_solid.simulation_settings_dict["is_detector"] = True
-    if "is_anti_solid" in entity_dict.keys() and entity_dict["is_anti_solid"] == "yes":
+    if ("is_anti_solid" in entity_dict.keys() and entity_dict["is_anti_solid"] == "yes") or texture_string == texture_anti:
         returned_solid.simulation_settings_dict["is_anti_solid"] = True
     return returned_solid
 def solid_from_world_brush():
