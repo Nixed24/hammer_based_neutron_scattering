@@ -2,6 +2,7 @@ REQUIRED LIBRARIES:
 - numpy
 - vmf_deserialiser (included)
 - scipy (for constants)
+  
 REQUIRED APPLICATIONS:
 - Hammer World Editor (should be bundled with any Source Engine game's Windows binaries)
 
