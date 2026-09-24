@@ -26,9 +26,9 @@ class Material_Profile:
         self.Z = atomic_number # u
         self.A = atomic_mass # u
         self.molar_mass = molar_mass # molar mass in grams per mole
-        self.atomic_radius = (1.2) * (self.A ** (1/3)) * (10 ** -15) #femtometres
+        self.atomic_radius = (1.2) * (self.A ** (1/3)) * (10 ** -15) #metres
         self.temperature = None
-        self.number_density = ((self.density) / (self.molar_mass)) * (AVOGADRO_CONSTANT)
+        self.number_density = ((self.density) / (self.molar_mass)) * (AVOGADRO_CONSTANT) # per centimetre cubed
         self.mfp_buffer = None
         return
     def read_in_material_properties(self, filename):
@@ -36,13 +36,13 @@ class Material_Profile:
     def get_mean_free_path_neutron(self, particle):
         particle_momentum = np.sqrt(2 * particle.kinetic_energy * particle.mass)
         db_wavelength = PLANCK_CONSTANT / particle_momentum
-        effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi)
-        microscopic_xsec = 2 * np.pi * (effective_radius**2) * (10 ** 4)
-        macroscopic_xsec = microscopic_xsec * self.number_density # cm^-1
+        effective_radius = self.atomic_radius + (db_wavelength) / (2 * np.pi) # metres
+        microscopic_xsec = np.pi * (effective_radius**2) # metres squared
+        macroscopic_xsec = ((10 ** 4) * microscopic_xsec) * self.number_density # (cm^2 * cm^-3 )=cm^-1
         
-        self.mfp_buffer = (1 / macroscopic_xsec) * 1.905 # Always include this line!
-        # Factor is for conversion to hammer unit
-        #return (1 / macroscopic_xsec) * 0.01
+        self.mfp_buffer = (1 / macroscopic_xsec) * 1.905 # Factor is for conversion to hammer unit
+        # IMPORTANT: This function sets mfp_buffer instead of returning a value
+        print(self.mfp_buffer)
         return
     def get_mean_free_path_your_particle(self, particle):
         your_mfp = None
@@ -77,7 +77,10 @@ tex_material_dict = {texture_graphite : material_graphite,
                      texture_anti : material_anti}
 
 
-VMF_FILENAME = "group_test.vmf"
+VMF_FILENAME = "simulation_test.vmf"
+
+DEFAULT_INITIAL_PARTICLE_SPEED = 0.05 * C_0
+DEFAULT_NUM_OF_PARTICLES = 25
 
 vmf_dict = vmf_deserialiser.deserialise_vmf(VMF_FILENAME)
 def array_is_uniform(array):
@@ -614,8 +617,8 @@ def simulation_create_particle_stack():
             try:
                 num_of_particles = int(value["amount"])
             except KeyError:
-                print(f"'amount' keyvalue not found for info_target with id '{value['id']}', using amount = 1")
-                num_of_particles = 1
+                print(f"'amount' keyvalue not found for info_target with id '{value['id']}', using amount = {DEFAULT_NUM_OF_PARTICLES} (default)")
+                num_of_particles = DEFAULT_NUM_OF_PARTICLES
             try:
                 angles = np.array(value["angles"].split(" "), dtype=float) * (np.pi / 180)
             except KeyError:
@@ -624,8 +627,8 @@ def simulation_create_particle_stack():
             try:
                 initial_particle_speed = value["initial_speed"]
             except KeyError:
-                print(f"'intial_speed' keyvalue not found for info_target with id '{value['id']}', using initial_speed = 0.05c")
-                initial_particle_speed = 0.05 * C_0
+                print(f"'intial_speed' keyvalue not found for info_target with id '{value['id']}', using initial_speed = {DEFAULT_INITIAL_PARTICLE_SPEED / C_0}c")
+                initial_particle_speed = DEFAULT_INITIAL_PARTICLE_SPEED
             for i in range (num_of_particles):
                 current_particle = Particle(particle_name)
                 current_particle.kinetic_energy = 0.5 * current_particle.mass * (initial_particle_speed ** 2)
@@ -636,7 +639,7 @@ def simulation_create_particle_stack():
     return particle_array
 def simulation_add_walk(particle):
     return
-def simulation_main_loop(particles, solids, num_of_iterations=100):
+def simulation_main_loop(particles, solids, num_of_iterations=1000):
     #simulated_particles = particles
     #simulated_brushes = solids
     print(f"Simulation began with {len(particles)} particles and {len(solids)} solids.")
